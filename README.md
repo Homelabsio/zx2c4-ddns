@@ -35,16 +35,16 @@ Finally, generate domain update keys using `ddns generate-domain-key`:
 
 ```
 # . /etc/ddns.conf; export DDNS_UPDATE_DOMAIN DDNS_SECRET
-# ddns generate-domain-key somesubdomain.dyn.example.org
+# ddns generate-domain-key ~somesubdomain.dyn.example.org
 ...
-# ddns generate-domain-key !restrictivesubdomain.dyn.example.org
+# ddns generate-domain-key restrictivesubdomain.dyn.example.org
 ...
 ```
 
-If the provided subdomain does _not_ start with a `!`, then that key can be
-used for that subdomain and all subdomains of it. Caution: this allows for an
-unbounded quantity of entries! If the provided subdomain _does_ start with a
-`!`, then that key can only be used for that exact subdomain.
+If the provided subdomain starts with a `~`, then that key can be used for that
+subdomain and all subdomains of it, but beware, this allows for an unbounded
+quantity of entries. If the provided subdomain does not start with a `~`, then
+that key can only be used for that exact subdomain.
 
 Updates can then be performed using any HTTPS utility:
 

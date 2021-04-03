@@ -288,25 +288,26 @@ func newAutocertListener(tcp *os.File, cacheDir, domain string) net.Listener {
 func usage() {
 	fmt.Fprintf(os.Stderr,
 		`Usage: %s generate-secret
-       %s generate-domain-key [!]DOMAIN
+       %s generate-domain-key [~]DOMAIN
        %s serve
 
-The generate-secret subcommand simply prints out a new random secret for use
+The 'generate-secret' subcommand simply prints out a new random secret for use
 in the DDNS_SECRET environment variable.
 
-The generate-domain-key subcommand generates a key to be used with the
-Domain-Secret http header when making update requests. If DOMAIN begins
-with a '!', the key may only be used for that exact domain. Otherwise the
-key is usable for that domain and all subdomains of it; beware, there is no
-limit on the number of entries such an unrestricted key can add. The
-DDNS_SECRET environment variable must be set and of valid form.
+The 'generate-domain-key' subcommand generates a key to be used with the
+Domain-Secret http header when making update requests. If DOMAIN does not
+begin with a '~', the key may only be used for that exact domain. Otherwise,
+if DOMAIN does begin with a '~', the key is usable for that domain and all
+subdomains of it; beware, there is no limit on the number of entries such an
+unrestricted key can add. The DDNS_SECRET environment variable must be set
+and of valid form.
 
-The serve subcommand starts a DNS server and a HTTPS update server on the
+The 'serve' subcommand starts a DNS server and an HTTPS update server on the
 domain specified by the DDNS_UPDATE_DOMAIN environment variable. Open file
 descriptors must be passed in with systemd socket-activation semantics, in
 order udp:53, tcp:53, tcp:443. The DDNS_SECRET environment variable must be
-set and of valid form. The /update/{DOMAIN} http endpoint requires the
-Domain-Secret http header to be set. Domains will be read from and stored
+set and of valid form. The /update/{DOMAIN} HTTP endpoint requires the
+Domain-Secret HTTP header to be set. Domains will be read from and stored
 to $STATE_DIRECTORY/domains.txt, and TLS certificates will be stored in
 $CACHE_DIRECTORY/ddns-certs.
 `, os.Args[0], os.Args[0], os.Args[0])
@@ -335,9 +336,9 @@ func main() {
 	if len(os.Args) == 3 && os.Args[1] == "generate-domain-key" {
 		domain := os.Args[2]
 		var split []string
-		var exclusive string
-		if len(domain) > 0 && domain[0] == '!' {
-			exclusive = "!"
+		exclusive := "!"
+		if len(domain) > 0 && domain[0] == '~' {
+			exclusive = ""
 			domain = domain[1:]
 		}
 		if domain != "" {
