@@ -11,7 +11,6 @@ StandardOutput=journal
 StandardError=journal
 ProcSubset=pid
 DynamicUser=true
-AmbientCapabilities=CAP_NET_BIND_SERVICE
 NoNewPrivileges=true
 LimitNOFILE=65535
 ProtectSystem=strict
@@ -36,6 +35,3 @@ RestrictRealtime=true
 RestrictSUIDSGID=true
 RemoveIPC=true
 SystemCallFilter=@basic-io @file-system @io-event @ipc @network-io @process @signal @sync @timer mprotect madvise mremap brk copy_file_range fadvise64 fadvise64_64 flock getcpu getrandom readdir sched_yield sched_getaffinity sendfile sendfile64 splice tee umask sysinfo uname ioctl
-
-[Install]
-WantedBy=multi-user.target

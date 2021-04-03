@@ -24,11 +24,11 @@ DDNS_UPDATE_DOMAIN=ddns.example.org
 DDNS_SECRET=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
 ```
 
-Then enable and start the daemon:
+Then enable and start the socket-activated daemon:
 
 ```
-# systemctl enable ddns.service
-# systemctl install ddns.service
+# systemctl enable ddns.socket
+# systemctl install ddns.socket
 ```
 
 Finally, generate domain update keys using `ddns generate-domain-key`:

@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"crypto/hmac"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/base64"
 	"fmt"
 	"net"
@@ -16,8 +17,11 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"syscall"
+	"time"
 
 	"github.com/miekg/dns"
 	"golang.org/x/crypto/acme/autocert"
@@ -191,12 +195,93 @@ func handleDns(w dns.ResponseWriter, r *dns.Msg) {
 	w.WriteMsg(m)
 }
 
-func serveDns(net, addr string) {
-	server := &dns.Server{Addr: addr, Net: net, ReusePort: true}
-	err := server.ListenAndServe()
+func systemdSockets() []*os.File {
+	var files []*os.File
+	pid, err := strconv.Atoi(os.Getenv("LISTEN_PID"))
+	if err != nil || pid != os.Getpid() {
+		return files
+	}
+	fds, err := strconv.Atoi(os.Getenv("LISTEN_FDS"))
+	if err != nil || fds == 0 {
+		return files
+	}
+	const SD_LISTEN_FDS_START = 3
+	for fd := SD_LISTEN_FDS_START; fd < SD_LISTEN_FDS_START+fds; fd++ {
+		syscall.CloseOnExec(fd)
+		files = append(files, os.NewFile(uintptr(fd), ""))
+	}
+	return files
+}
+
+func startDnsServers(udp, tcp *os.File) {
+	dnsUdpListener, err := net.FilePacketConn(udp)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: unable to listen on %s%s: %v\n", net, addr, err)
+		fmt.Fprintf(os.Stderr, "Error: unable to listen on %v: %v\n", udp, err)
 		os.Exit(1)
+	}
+	go func() {
+		server := dns.Server{PacketConn: dnsUdpListener}
+		if err := server.ActivateAndServe(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: unable to serve DNS on %v: %v\n", dnsUdpListener, err)
+			os.Exit(1)
+		}
+	}()
+	dnsTcpListener, err := net.FileListener(tcp)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: unable to listen on %v: %v\n", tcp, err)
+		os.Exit(1)
+	}
+	go func() {
+		server := dns.Server{Listener: dnsTcpListener}
+		if err := server.ActivateAndServe(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: unable to serve DNS on %v: %v\n", dnsTcpListener, err)
+			os.Exit(1)
+		}
+	}()
+}
+
+type tlsListener struct {
+	conf *tls.Config
+	listener  net.Listener
+}
+
+func (ln *tlsListener) Accept() (net.Conn, error) {
+	conn, err := ln.listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	tcpConn := conn.(*net.TCPConn)
+	tcpConn.SetKeepAlive(true)
+	tcpConn.SetKeepAlivePeriod(3 * time.Minute)
+	return tls.Server(tcpConn, ln.conf), nil
+}
+
+func (ln *tlsListener) Addr() net.Addr {
+	return ln.listener.Addr()
+}
+
+func (ln *tlsListener) Close() error {
+	return ln.Close()
+}
+
+func newAutocertListener(tcp *os.File, cacheDir, domain string) net.Listener {
+	cacheDir = filepath.Join(cacheDir, "tls-certs")
+	if err := os.MkdirAll(cacheDir, 0700); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: unable to create cert cache directory: %v\n", err)
+		os.Exit(1)
+	}
+	listener, err := net.FileListener(tcp)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: unable to create file listener: %v\n", err)
+	}
+	m := autocert.Manager{
+		Prompt:     autocert.AcceptTOS,
+		HostPolicy: autocert.HostWhitelist(domain),
+		Cache:      autocert.DirCache(cacheDir),
+	}
+	return &tlsListener{
+		conf:     m.TLSConfig(),
+		listener: listener,
 	}
 }
 
@@ -216,29 +301,16 @@ key is usable for that domain and all subdomains of it; beware, there is no
 limit on the number of entries such an unrestricted key can add. The
 DDNS_SECRET environment variable must be set and of valid form.
 
-The serve subcommand starts the HTTPS update server on 443 on the domain
-specified by the DDNS_UPDATE_DOMAIN environment variable, as well as the DNS
-server running on port 53 (tcp and udp). The DDNS_SECRET environment
-variable must be set and of valid form. The /update/{DOMAIN} http
-endpoint requires the Domain-Secret http header to be set. Domains will
-be read from and stored to $STATE_DIRECTORY/domains.txt, and TLS certificates
-will be stored in $CACHE_DIRECTORY/ddns-certs.
+The serve subcommand starts a DNS server and a HTTPS update server on the
+domain specified by the DDNS_UPDATE_DOMAIN environment variable. Open file
+descriptors must be passed in with systemd socket-activation semantics, in
+order udp:53, tcp:53, tcp:443. The DDNS_SECRET environment variable must be
+set and of valid form. The /update/{DOMAIN} http endpoint requires the
+Domain-Secret http header to be set. Domains will be read from and stored
+to $STATE_DIRECTORY/domains.txt, and TLS certificates will be stored in
+$CACHE_DIRECTORY/ddns-certs.
 `, os.Args[0], os.Args[0], os.Args[0])
 	os.Exit(1)
-}
-
-func newAutocertListener(cacheDir, domain string) net.Listener {
-	cacheDir = filepath.Join(cacheDir, "ddns-certs")
-	if err := os.MkdirAll(cacheDir, 0700); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: unable to create cert cache directory: %v\n", err)
-		os.Exit(1)
-	}
-	m := autocert.Manager{
-		Prompt:     autocert.AcceptTOS,
-		HostPolicy: autocert.HostWhitelist(domain),
-		Cache:      autocert.DirCache(cacheDir),
-	}
-	return m.Listener()
 }
 
 func main() {
@@ -317,15 +389,20 @@ func main() {
 
 	load()
 
+	files := systemdSockets()
+	if len(files) != 3 {
+		fmt.Fprintln(os.Stderr, "Error: expected to receive 3 activated sockets")
+		os.Exit(1)
+	}
+
 	dns.HandleFunc(".", handleDns)
-	go serveDns("tcp", ":53")
-	go serveDns("udp", ":53")
+	startDnsServers(files[0], files[1])
 
 	http.HandleFunc("/update/", handleUpdate)
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "https://git.zx2c4.com/zx2c4-ddns/about/", 302)
 	})
-	err = http.Serve(newAutocertListener(cacheDir, updateDomain), nil)
+	err = http.Serve(newAutocertListener(files[2], cacheDir, updateDomain), nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: unable to serve https: %v\n", err)
 		os.Exit(1)

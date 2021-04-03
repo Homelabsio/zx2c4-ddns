@@ -13,9 +13,9 @@ ddns: $(wildcard  *.go) go.mod
 ddns.service: ddns.service.in
 	sed -e 's^BINDIR^$(BINDIR)^g' -e 's^SYSCONFDIR^$(SYSCONFDIR)^g' $< > $@
 
-install: ddns ddns.service ddns.conf
+install: ddns ddns.service ddns.socket ddns.conf
 	@install -v -d "$(DESTDIR)$(BINDIR)" && install -v -m 0755 ddns "$(DESTDIR)$(BINDIR)/ddns"
-	@install -v -d "$(DESTDIR)$(SYSTEMDUNITDIR)" && install -v -m 0644 ddns.service "$(DESTDIR)$(SYSTEMDUNITDIR)/"
+	@install -v -d "$(DESTDIR)$(SYSTEMDUNITDIR)" && install -v -m 0644 ddns.service ddns.socket "$(DESTDIR)$(SYSTEMDUNITDIR)/"
 	@install -v -d "$(DESTDIR)$(SYSCONFDIR)" && install -v -m 0600 ddns.conf "$(DESTDIR)$(SYSCONFDIR)/"
 
 clean:
