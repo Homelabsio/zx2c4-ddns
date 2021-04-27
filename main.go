@@ -163,6 +163,7 @@ func handleUpdate(w http.ResponseWriter, r *http.Request) {
 func handleDns(w dns.ResponseWriter, r *dns.Msg) {
 	m := new(dns.Msg)
 	m.SetReply(r)
+	m.Authoritative = true
 	for _, q := range r.Question {
 		domain := normalizeDomain(q.Name)
 		if domain == "" {
