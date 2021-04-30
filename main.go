@@ -182,13 +182,13 @@ func handleDns(w dns.ResponseWriter, r *dns.Msg) {
 		if q.Qtype == dns.TypeA && ip.Is4() {
 			v4 := ip.As4()
 			m.Answer = append(m.Answer, &dns.A{
-				Hdr: dns.RR_Header{Name: domain, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 30},
+				Hdr: dns.RR_Header{Name: q.Name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 30},
 				A:   v4[:],
 			})
 		} else if q.Qtype == dns.TypeAAAA && ip.Is6() {
 			v6 := ip.As16()
 			m.Answer = append(m.Answer, &dns.AAAA{
-				Hdr:  dns.RR_Header{Name: domain, Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 30},
+				Hdr:  dns.RR_Header{Name: q.Name, Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 30},
 				AAAA: v6[:],
 			})
 		}
